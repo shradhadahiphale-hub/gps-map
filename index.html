@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <!-- Important when using OpenStreetMap -->
+    <meta name="referrer"
+          content="strict-origin-when-cross-origin">
+
+    <title>GPS Tracking System</title>
+
+    <!-- Leaflet CSS -->
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    >
+
+    <style>
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f4f4f4;
+        }
+
+        #header {
+            background: #222;
+            color: white;
+            padding: 15px 20px;
+        }
+
+        #header h1 {
+            margin: 0 0 5px 0;
+            font-size: 24px;
+        }
+
+        #status {
+            font-size: 15px;
+        }
+
+        #map {
+            width: 100%;
+            height: 70vh;
+        }
+
+        #info {
+            background: white;
+            padding: 15px 20px;
+            font-size: 17px;
+            line-height: 1.7;
+        }
+
+        .label {
+            font-weight: bold;
+        }
+
+        .waiting {
+            color: orange;
+        }
+
+        .connected {
+            color: lightgreen;
+        }
+
+        .error {
+            color: #ff5555;
+        }
+
+    </style>
+</head>
+
+
+<body>
+
+    <!-- HEADER -->
+
+    <div id="header">
+
+        <h1>GPS Tracking System</h1>
+
+        <div id="status" class="waiting">
+            Connecting to GPS...
+        </div>
+
+    </div>
+
+
+    <!-- MAP -->
+
+    <div id="map"></div>
+
+
+    <!-- GPS INFORMATION -->
+
+    <div id="info">
+
+        <div>
+            <span class="label">Latitude:</span>
+            <span id="latitude">--</span>
+        </div>
+
+        <div>
+            <span class="label">Longitude:</span>
+            <span id="longitude">--</span>
+        </div>
+
+        <div>
+            <span class="label">GPS Source:</span>
+            Wokwi simulated NEO-6M
+        </div>
+
+    </div>
+
+
+    <!-- Leaflet JavaScript -->
+
+    <script
+        src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+    </script>
+
+
+    <!-- MQTT JavaScript -->
+
+    <script
+        src="https://unpkg.com/mqtt/dist/mqtt.min.js">
+    </script>
+
+
+    <script>
+
+        // ==========================================================
+        // MQTT SETTINGS
+        // ==========================================================
+
+        const MQTT_BROKER =
+            "wss://broker.hivemq.com:8884/mqtt";
+
+
+        // IMPORTANT:
+        // This must be EXACTLY the same topic
+        // used in your ESP32 sketch.
+
+        const MQTT_TOPIC =
+            "gps-demo/shradha-47620763700582337";
+
+
+        // ==========================================================
+        // STARTING GPS LOCATION
+        // ==========================================================
+
+        const START_LAT = 19.076000;
+
+        const START_LNG = 72.877700;
+
+
+        // ==========================================================
+        // CREATE MAP
+        // ==========================================================
+
+        const map = L.map("map").setView(
+            [START_LAT, START_LNG],
+            15
+        );
+
+
+        // ==========================================================
+        // OPENSTREETMAP MAP
+        // NO API KEY REQUIRED
+        // ==========================================================
+
+        L.tileLayer(
+            "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+            {
+                maxZoom: 19,
+
+                attribution:
+                    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+
+                referrerPolicy:
+                    "strict-origin-when-cross-origin"
+            }
+        ).addTo(map);
+
+
+        // ==========================================================
+        // GPS MARKER
+        // ==========================================================
+
+        let gpsMarker = null;
+
+
+        // ==========================================================
+        // ROUTE LINE
+        // ==========================================================
+
+        let routeLine = null;
+
+        let routePoints = [];
+
+
+        // ==========================================================
+        // UPDATE GPS
+        // ==========================================================
+
+        function updateGPS(latitude, longitude) {
+
+            console.log(
+                "GPS:",
+                latitude,
+                longitude
+            );
+
+
+            // Update text
+
+            document.getElementById(
+                "latitude"
+            ).textContent =
+                latitude.toFixed(6);
+
+
+            document.getElementById(
+                "longitude"
+            ).textContent =
+                longitude.toFixed(6);
+
+
+            // Update status
+
+            document.getElementById(
+                "status"
+            ).textContent =
+                "Connected — GPS location received";
+
+
+            document.getElementById(
+                "status"
+            ).className =
+                "connected";
+
+
+            // GPS position
+
+            const position = [
+                latitude,
+                longitude
+            ];
+
+
+            // ======================================================
+            // CREATE MARKER
+            // ======================================================
+
+            if (gpsMarker === null) {
+
+                gpsMarker = L.marker(
+                    position
+                )
+                .addTo(map)
+                .bindPopup(
+                    "<b>GPS Location</b><br>" +
+                    "Latitude: " +
+                    latitude.toFixed(6) +
+                    "<br>" +
+                    "Longitude: " +
+                    longitude.toFixed(6)
+                );
+
+
+                gpsMarker.openPopup();
+
+
+                // Move map to GPS position
+
+                map.setView(
+                    position,
+                    17
+                );
+
+            }
+
+
+            // ======================================================
+            // MOVE MARKER
+            // ======================================================
+
+            else {
+
+                gpsMarker.setLatLng(
+                    position
+                );
+
+
+                gpsMarker.setPopupContent(
+                    "<b>GPS Location</b><br>" +
+                    "Latitude: " +
+                    latitude.toFixed(6) +
+                    "<br>" +
+                    "Longitude: " +
+                    longitude.toFixed(6)
+                );
+
+            }
+
+
+            // ======================================================
+            // ADD POINT TO ROUTE
+            // ======================================================
+
+            routePoints.push(
+                position
+            );
+
+
+            // ======================================================
+            // DRAW ROUTE
+            // ======================================================
+
+            if (routeLine === null) {
+
+                routeLine = L.polyline(
+                    routePoints,
+                    {
+                        weight: 4
+                    }
+                ).addTo(map);
+
+            }
+
+            else {
+
+                routeLine.setLatLngs(
+                    routePoints
+                );
+
+            }
+
+        }
+
+
+        // ==========================================================
+        // CONNECT TO MQTT
+        // ==========================================================
+
+        document.getElementById(
+            "status"
+        ).textContent =
+            "Connecting to MQTT...";
+
+
+        const mqttClient =
+            mqtt.connect(
+                MQTT_BROKER,
+                {
+                    reconnectPeriod: 2000,
+
+                    connectTimeout: 10000
+                }
+            );
+
+
+        // ==========================================================
+        // MQTT CONNECTED
+        // ==========================================================
+
+        mqttClient.on(
+            "connect",
+            function () {
+
+                console.log(
+                    "MQTT connected"
+                );
+
+
+                document.getElementById(
+                    "status"
+                ).textContent =
+                    "Connected — waiting for GPS";
+
+
+                document.getElementById(
+                    "status"
+                ).className =
+                    "waiting";
+
+
+                // Subscribe to GPS topic
+
+                mqttClient.subscribe(
+                    MQTT_TOPIC,
+                    function (error) {
+
+                        if (error) {
+
+                            console.error(
+                                "Subscribe error:",
+                                error
+                            );
+
+
+                            document.getElementById(
+                                "status"
+                            ).textContent =
+                                "MQTT subscription failed";
+
+
+                            document.getElementById(
+                                "status"
+                            ).className =
+                                "error";
+
+                        }
+
+                        else {
+
+                            console.log(
+                                "Subscribed to:",
+                                MQTT_TOPIC
+                            );
+
+                        }
+
+                    }
+                );
+
+            }
+        );
+
+
+        // ==========================================================
+        // RECEIVE GPS DATA
+        // ==========================================================
+
+        mqttClient.on(
+            "message",
+            function (topic, message) {
+
+                console.log(
+                    "MQTT message:",
+                    message.toString()
+                );
+
+
+                try {
+
+                    const data =
+                        JSON.parse(
+                            message.toString()
+                        );
+
+
+                    // Expected:
+
+                    // {
+                    //     "lat": 19.076000,
+                    //     "lng": 72.877700
+                    // }
+
+
+                    if (
+                        typeof data.lat === "number" &&
+                        typeof data.lng === "number"
+                    ) {
+
+                        updateGPS(
+                            data.lat,
+                            data.lng
+                        );
+
+                    }
+
+                }
+
+                catch (error) {
+
+                    console.error(
+                        "Invalid GPS data:",
+                        error
+                    );
+
+                }
+
+            }
+        );
+
+
+        // ==========================================================
+        // MQTT ERROR
+        // ==========================================================
+
+        mqttClient.on(
+            "error",
+            function (error) {
+
+                console.error(
+                    "MQTT error:",
+                    error
+                );
+
+
+                document.getElementById(
+                    "status"
+                ).textContent =
+                    "MQTT connection error";
+
+
+                document.getElementById(
+                    "status"
+                ).className =
+                    "error";
+
+            }
+        );
+
+
+        // ==========================================================
+        // MQTT RECONNECT
+        // ==========================================================
+
+        mqttClient.on(
+            "reconnect",
+            function () {
+
+                document.getElementById(
+                    "status"
+                ).textContent =
+                    "Reconnecting to MQTT...";
+
+
+                document.getElementById(
+                    "status"
+                ).className =
+                    "waiting";
+
+            }
+        );
+
+    </script>
+
+</body>
+</html>
